@@ -7,7 +7,7 @@ You must test your agent's strength against a set of agents with known
 relative strength using tournament.py and include the results in your report.
 """
 import random
-
+import isolation
 
 class Timeout(Exception):
     """Subclass base exception for code clarity."""
@@ -38,7 +38,13 @@ def custom_score(game, player):
     """
 
     # TODO: finish this function!
-    raise NotImplementedError
+    if game.is_loser(player):
+        return float("-inf")
+
+    if game.is_winner(player):
+        return float("inf")
+
+    return float(len(game.get_legal_moves(player)))
 
 
 class CustomPlayer:
@@ -129,7 +135,8 @@ class CustomPlayer:
             # here in order to avoid timeout. The try/except block will
             # automatically catch the exception raised by the search method
             # when the timer gets close to expiring
-            pass
+            _, move = self.minimax(game, self.search_depth)
+            return move
 
         except Timeout:
             # Handle any actions required at timeout, if necessary
@@ -172,8 +179,49 @@ class CustomPlayer:
         if self.time_left() < self.TIMER_THRESHOLD:
             raise Timeout()
 
-        # TODO: finish this function!
-        raise NotImplementedError
+        if maximizing_player:
+            max_min_fn = max
+            best_score = float("-inf")
+        else:
+            max_min_fn = min
+            best_score = float("+inf")
+
+        # get a listing of possible moves
+        legal_moves = game.get_legal_moves()
+
+        # check to see if a terminal leaf is reached
+        if not legal_moves:
+            if maximizing_player:
+                return float("-inf"), (-1,-1)
+            else:
+                return float("inf"), (-1,-1)
+
+        # At depth of 1, the bottom of the depth-limited search has been reached
+        if depth == 1:
+
+            # create a tuple listing of scores and moves, e.g. [(4.0, (2,3))]
+            scored_moves = [(self.score(game.forecast_move(m), self), m) for m in legal_moves]
+
+            # pass back up the max or min scores of the children
+            return max_min_fn(scored_moves)
+
+        else:
+
+            best_move = None
+
+            for move in legal_moves:
+                # apply the next move to a copy of the game board
+                new_game = game.forecast_move(move)
+
+                # recursively call function unless terminal state or depth 1 reached
+                score, _ = self.minimax(new_game, depth-1, not maximizing_player)
+
+                if max_min_fn(score, best_score) == score:
+                    best_score = score
+                    best_move = move
+
+            return best_score, best_move
+  
 
     def alphabeta(self, game, depth, alpha=float("-inf"), beta=float("inf"), maximizing_player=True):
         """Implement minimax search with alpha-beta pruning as described in the

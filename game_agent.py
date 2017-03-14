@@ -135,7 +135,8 @@ class CustomPlayer:
             # here in order to avoid timeout. The try/except block will
             # automatically catch the exception raised by the search method
             # when the timer gets close to expiring
-            _, move = self.minimax(game, self.search_depth)
+            #_, move = self.minimax(game, self.search_depth)
+            _, move = self.alphabeta(game, self.search_depth)
             return move
 
         except Timeout:
@@ -179,6 +180,9 @@ class CustomPlayer:
         if self.time_left() < self.TIMER_THRESHOLD:
             raise Timeout()
 
+        # Instead of duplicating the code with minor changes for maximizing vs
+        # minimizing player, the min_max function is set here with best score
+        # intialized to its repective limit
         if maximizing_player:
             max_min_fn = max
             best_score = float("-inf")
@@ -191,10 +195,7 @@ class CustomPlayer:
 
         # check to see if a terminal leaf is reached
         if not legal_moves:
-            if maximizing_player:
-                return float("-inf"), (-1,-1)
-            else:
-                return float("inf"), (-1,-1)
+            return best_score, (-1,-1)
 
         # At depth of 1, the bottom of the depth-limited search has been reached
         if depth == 1:
@@ -264,5 +265,57 @@ class CustomPlayer:
         if self.time_left() < self.TIMER_THRESHOLD:
             raise Timeout()
 
-        # TODO: finish this function!
-        raise NotImplementedError
+        # Instead of duplicating the code with minor changes for maximizing vs
+        # minimizing player, the min_max function is set here with best score
+        # intialized to its repective limit
+        if maximizing_player:
+            max_min_fn = max
+            score = float("-inf")
+        else:
+            max_min_fn = min
+            score = float("+inf")
+
+        # get a listing of possible moves
+        legal_moves = game.get_legal_moves()
+
+        # check to see if a terminal leaf is reached
+        if not legal_moves:
+            return score, (-1,-1)
+
+        # The bottom of the depth-limited search has been reached
+        if depth == 1:
+
+            # create a tuple listing of scores and moves, e.g. [(4.0, (2,3))]
+            for m in legal_moves:
+                s = self.score(game.forecast_move(m), self)
+                if max_min_fn(s, score) == s:
+                    score = s
+                    move = m
+
+                if maximizing_player and (score >= beta) or not maximizing_player and (score <= alpha):
+                    return score, m
+            return score, move
+
+        # a higher tier of the depth tree reached, use recursion to go lower
+        else:
+
+            for m in legal_moves:
+                # apply the next move to a copy of the game board
+                new_game = game.forecast_move(m)
+
+                # recursively call function unless terminal state or depth 1 reached
+                s, _ = self.alphabeta(new_game, depth-1, alpha, beta, not maximizing_player)
+                if max_min_fn(s, score) == s:
+                    score = s
+                    move = m
+
+                if maximizing_player:
+                    if score >= beta:
+                        return score, m
+                    alpha = max(alpha, score)
+                else:
+                    if score <= alpha:
+                        return score, m
+                    beta = min(beta, score)
+
+            return score, move

@@ -265,57 +265,66 @@ class CustomPlayer:
         if self.time_left() < self.TIMER_THRESHOLD:
             raise Timeout()
 
-        # Instead of duplicating the code with minor changes for maximizing vs
-        # minimizing player, the min_max function is set here with best score
-        # intialized to its repective limit
+        # set intial values for best score and move depending on max or min level
         if maximizing_player:
-            max_min_fn = max
-            score = float("-inf")
+            best_score = float("-inf")
+            best_move = (-1,-1)
         else:
-            max_min_fn = min
-            score = float("+inf")
+            best_score = float("+inf")
+            best_move = (-1,-1)
 
         # get a listing of possible moves
         legal_moves = game.get_legal_moves()
 
-        # check to see if a terminal leaf is reached
+        # check to see if there are no more moves, indicating a terminal leaf
         if not legal_moves:
-            return score, (-1,-1)
+            return best_score, best_move 
 
-        # The bottom of the depth-limited search has been reached
-        if depth == 1:
+        # iterate through legal moves, return early if remaining moves could be pruned
+        for move in legal_moves:
 
-            # create a tuple listing of scores and moves, e.g. [(4.0, (2,3))]
-            for m in legal_moves:
-                s = self.score(game.forecast_move(m), self)
-                if max_min_fn(s, score) == s:
-                    score = s
-                    move = m
+            # at the bottom leaf
+            if depth == 1:
 
-                if maximizing_player and (score >= beta) or not maximizing_player and (score <= alpha):
-                    return score, m
-            return score, move
+                # calcuate score for this move
+                score = self.score(game.forecast_move(move), self)
 
-        # a higher tier of the depth tree reached, use recursion to go lower
-        else:
+            # at a higher tier leaf; copy board and use recursion to move one level lower
+            else:
+                # create a new game board to next move
+                new_game = game.forecast_move(move)
 
-            for m in legal_moves:
-                # apply the next move to a copy of the game board
-                new_game = game.forecast_move(m)
+                # go down one more leaf using recursion, return score of this leaf
+                score, _ = self.alphabeta(new_game, depth-1, alpha, beta, not maximizing_player)
 
-                # recursively call function unless terminal state or depth 1 reached
-                s, _ = self.alphabeta(new_game, depth-1, alpha, beta, not maximizing_player)
-                if max_min_fn(s, score) == s:
-                    score = s
-                    move = m
+            # in a maximizing layer
+            if maximizing_player:
+        
+                # save the highest score and move from this leaf
+                if score > best_score:
+                    best_score = score
+                    best_move = move
 
-                if maximizing_player:
-                    if score >= beta:
-                        return score, m
-                    alpha = max(alpha, score)
-                else:
-                    if score <= alpha:
-                        return score, m
-                    beta = min(beta, score)
+                # if higher or equal to beta, return early (pruning remaining iterations in this leaf)
+                if best_score >= beta:
+                    return best_score, best_move
 
-            return score, move
+                # adjust the value used for the next minimizing recursion
+                alpha = max(alpha, best_score)
+            
+            # in a minimizing layer
+            else:
+                
+                # save the lowest score and move from this leaf
+                if score < best_score:
+                    best_score = score
+                    best_move = move
+
+                # if lower or equal to alpha, return early (pruning remaining iterations in this leaf)
+                if best_score <= alpha:
+                    return best_score, best_move
+
+                # adjust the value used for the next maximizing recursion
+                beta = min(beta, best_score)
+
+        return best_score, best_move

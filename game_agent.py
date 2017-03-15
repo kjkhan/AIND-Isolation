@@ -266,36 +266,32 @@ class CustomPlayer:
             raise Timeout()
 
         # set intial values for best score and move depending on max or min level
+        best_move = (-1,-1)
+
         if maximizing_player:
-            best_score = float("-inf")
-            best_move = (-1,-1)
+            best_score = float("-inf")    
         else:
             best_score = float("+inf")
-            best_move = (-1,-1)
+
+        # check for terminal condition: lowest depth requested; return score and move
+        if depth == 0:
+            return self.score(game, self), game.get_player_location(game.active_player)
 
         # get a listing of possible moves
         legal_moves = game.get_legal_moves()
 
-        # check to see if there are no more moves, indicating a terminal leaf
+        # check for terminal condition: no more moves; return +/-inf and (-1,1)
         if not legal_moves:
             return best_score, best_move 
 
         # iterate through legal moves, return early if remaining moves could be pruned
         for move in legal_moves:
 
-            # at the bottom leaf
-            if depth == 1:
+            # create a new game board to next move
+            new_game = game.forecast_move(move)
 
-                # calcuate score for this move
-                score = self.score(game.forecast_move(move), self)
-
-            # at a higher tier leaf; copy board and use recursion to move one level lower
-            else:
-                # create a new game board to next move
-                new_game = game.forecast_move(move)
-
-                # go down one more leaf using recursion, return score of this leaf
-                score, _ = self.alphabeta(new_game, depth-1, alpha, beta, not maximizing_player)
+            # go down one more leaf using recursion, return score of this leaf
+            score, _ = self.alphabeta(new_game, depth-1, alpha, beta, not maximizing_player)
 
             # in a maximizing layer
             if maximizing_player:

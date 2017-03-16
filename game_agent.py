@@ -44,14 +44,40 @@ def custom_score(game, player):
     if game.is_winner(player):
         return float("inf")
 
-    return float(len(game.get_legal_moves(player)))
+    # the chosen heuristic
+    heuristic = "improved_distance"
+
+    if heuristic == "warnsdorf":
+        own_moves = game.get_legal_moves(player)
+        opp_moves = game.get_legal_moves(game.get_opponent(player))
+
+        score = -1.0 * float(len(own_moves))
+
+        if score == -1.0:
+            if own_moves in opp_moves:
+                score = -10.0
+
+        return score - len(opp_moves)
+
+    elif heuristic == "modified_warnsdorf":
+        own_moves = len(game.get_legal_moves(player))
+        opp_moves = len(game.get_legal_moves(game.get_opponent(player)))
+        return float(-1.0*own_moves - opp_moves)
+
+    elif heuristic == "improved_distance":
+        own_moves = len(game.get_legal_moves(player))
+        opp_moves = len(game.get_legal_moves(game.get_opponent(player)))
+
+        c_own, r_own = game.get_player_location(player)
+        c_opp, r_opp = game.get_player_location(game.get_opponent(player))
+        distance = ((c_opp - c_own)**2.0 + (r_opp - r_own)**2.0)**0.5
+
+        return float(distance/2.0 + own_moves -  opp_moves)
 
 
 class CustomPlayer:
     """Game-playing agent that chooses a move using your evaluation function
-    and a depth-limited minimax algorithm with alpha-beta pruning. You must
-    finish and test this player to make sure it properly uses minimax and
-    alpha-beta to return a good move before the search time limit expires.
+    and a depth-limited minimax algorithm with alpha-beta pruning. 
 
     Parameters
     ----------
@@ -85,7 +111,6 @@ class CustomPlayer:
         self.method = method
         self.time_left = None
         self.TIMER_THRESHOLD = timeout
-        self.opening_move = True
 
     def get_move(self, game, legal_moves, time_left):
         """Search for the best move from the available legal moves and return a
@@ -124,54 +149,62 @@ class CustomPlayer:
         """
 
         self.time_left = time_left
+        TIME_MARGIN = 20
 
-        # Perform any required initializations, including selecting an initial
-        # move from the game board (i.e., an opening book), or returning
-        # immediately if there are no legal moves
+        # return immediately if there are no legal moves
         if not legal_moves:
             return (-1,-1)
 
-        # try to get as close to middle for opening move
-        #if self.opening_move:
-         #   return (3,3)
-            #self.opening_move = False
-            #c = int(game.width / 2)
-            #r = int(game.height  / 2)
-            #if (c,r) in legal_moves:
-                #return (c,r)
-            #else:
-                #return (c+1,r)
+        # select intial move; a corner position is chosen to minimize the number
+        # of options of legal moves from the start.  This follows Warnsdorf's
+        # Rule, which seeks out moves with the fewest onward moves to save
+        # higher-onward-moves spots for later in the game 
+        if game.move_count <= 1:
 
+            move = (game.width-1, game.height-1)
+            if move in legal_moves:
+                return move
+            else:
+                return (0,0)
 
+        # set default move, to be updated in try/except block
         move = (-1,-1)
+
         try:
             #  call minimax or alphabeta with class defined search depth
             if self.method == "minimax":
                 method = self.minimax
             elif self.method == "alphabeta":
                 method = self.alphabeta
+            else:
+                raise NotImplementedError
                 
+            # use iterative deepening if iterative flag set
+            # start serach at depth 1 and continue until time is about expire
             if self.iterative:
-                for depth in range(100):
+
+                # set intial depth
+                depth = 1
+
+                while self.time_left() > TIME_MARGIN:
+
+                    # get score and move for this depth
                     score, move = method(game, depth)
 
                     # if terminal move reached, break out of the loop
                     if score == float("inf") or score == float("-inf"):
                         break
                     
-                    # if the remaining time is low, break out of the loop
-                    if self.time_left() < 100:
-                        break
+                    depth = depth + 1
 
+            # use standard depth-first search to traverse tree
             else:
                 _, move = method(game, self.search_depth)
 
         except Timeout:
-            # Handle any actions required at timeout, if necessary
             pass
 
         # Return the best move from the last completed search iteration
-        #print("final depth", depth, "best move", move, "final score", score)
         return move
 
     def minimax(self, game, depth, maximizing_player=True):
@@ -208,23 +241,19 @@ class CustomPlayer:
         if self.time_left() < self.TIMER_THRESHOLD:
             raise Timeout()
 
-        # Instead of duplicating the code with minor changes for maximizing vs
-        # minimizing player, the min_max function is set here with best score
-        # intialized to its repective limit
-        if maximizing_player:
-            max_min_fn = max
-            best_score = float("-inf")
-            best_move = (-1,-1)
-        else:
-            max_min_fn = min
-            best_score = float("+inf")
-            best_move = (-1,-1)
-
-        # If at terminal depth (0), return score and move
+        # at lowest depth (terminal condition), end recursion, and return score
         if depth == 0:
             return self.score(game, self), game.get_player_location(game.active_player)
 
+        # at a higher depth, recursively iterate though legal moves
         else:
+            # set initial values for max and min terminal leafs
+            best_move = (-1,-1)
+            if maximizing_player:
+                best_score = float("-inf")
+            else:
+                best_score = float("+inf")
+
             # get a listing of possible moves
             legal_moves = game.get_legal_moves()
 
@@ -233,14 +262,14 @@ class CustomPlayer:
                 return best_score, best_move
 
             for move in legal_moves:
-                # apply the next move to a copy of the game board
-                new_game = game.forecast_move(move)
 
-                # recursively call function unless terminal state reached
+                # copy game board with new move, use recursion to go down level
+                new_game = game.forecast_move(move)
                 score, _ = self.minimax(new_game, depth-1, not maximizing_player)
 
                 # save best score and move
-                if max_min_fn(score, best_score) == score:
+                if (maximizing_player and score > best_score) \
+                   or (not maximizing_player and score < best_score):
                     best_score = score
                     best_move = move
 
@@ -288,23 +317,19 @@ class CustomPlayer:
         if self.time_left() < self.TIMER_THRESHOLD:
             raise Timeout()
 
-        # Instead of duplicating the code with minor changes for maximizing vs
-        # minimizing player, the min_max function is set here with best score
-        # intialized to its repective limit
-        if maximizing_player:
-            max_min_fn = max
-            best_score = float("-inf") 
-            best_move = (-1,-1)
-        else:
-            max_min_fn = min
-            best_score = float("+inf") 
-            best_move = (-1,-1)
-
-        # check for terminal condition: lowest depth requested
+        # at lowest depth (terminal condition), end recursion, and return score
         if depth == 0:
             return self.score(game, self), game.get_player_location(game.active_player)
 
+        # at a higher depth, recursively iterate though legal moves
         else:
+            # set initial values for max and min terminal leafs
+            best_move = (-1,-1) 
+            if maximizing_player:
+                best_score = float("-inf") 
+            else:
+                best_score = float("+inf") 
+
             # get a listing of possible moves
             legal_moves = game.get_legal_moves()
 
@@ -317,13 +342,14 @@ class CustomPlayer:
                 # copy game board with new move, use recursion to go down level
                 new_game = game.forecast_move(move)
                 score, _ = self.alphabeta(new_game, depth-1, alpha, beta, not maximizing_player)
-            
-                # save best score and move
-                if max_min_fn(score, best_score) == score:
-                    best_score = score
-                    best_move = move
 
                 if maximizing_player:
+
+                    # save best score and move
+                    if score > best_score:
+                        best_score = score
+                        best_move = move
+
                     # if better than beta, return early (pruning other moves)
                     if best_score >= beta:
                         return best_score, best_move
@@ -332,6 +358,12 @@ class CustomPlayer:
                     alpha = max(alpha, best_score)
                 
                 else:
+
+                    # save best score and move
+                    if score < best_score:
+                        best_score = score
+                        best_move = move
+
                     # if better than alpha, return early (pruning other moves)
                     if best_score <= alpha:
                         return best_score, best_move

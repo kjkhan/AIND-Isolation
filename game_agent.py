@@ -13,6 +13,9 @@ class Timeout(Exception):
     """Subclass base exception for code clarity."""
     pass
 
+class TimeExpiring(Exception):
+    """Subclass base exception for code clarity."""
+    pass
 
 def custom_score(game, player):
     """Calculate the heuristic value of a game state from the point of view
@@ -37,42 +40,71 @@ def custom_score(game, player):
         The heuristic value of the current game state to the specified player.
     """
 
-    # TODO: finish this function!
+    # select which heuristic to use here, current choices:
+    #    warnsdorf, modified_warnsdorf, improved_keepclose
+    HEURISTIC = 'improved_keepclose'
+
+    # return with respective score if game is over
     if game.is_loser(player):
         return float("-inf")
 
     if game.is_winner(player):
         return float("inf")
 
-    # the chosen heuristic
-    heuristic = "improved_distance"
-
-    if heuristic == "warnsdorf":
+    # WARNSDORF:  Uses the principle behind Warnsdorf's Rule for the knight tour
+    # problem, which chooses a move with the fewest onward moves to conserve 
+    # high-onward-move choices for later in the game when these choices are
+    # diminished.  To do this, the heuristic takes the number of legal moves
+    # currently available and multiplies it by -1.0; this way, the higher the
+    # value, the fewer moves available.  It ignores the other player with one
+    # exception: if only one move is available, avoid this move if the opponent
+    # could also move there to sidestep from being blocked in.
+    if HEURISTIC == "warnsdorf":
         own_moves = game.get_legal_moves(player)
         opp_moves = game.get_legal_moves(game.get_opponent(player))
 
         score = -1.0 * float(len(own_moves))
 
-        if score == -1.0:
+        if len(own_moves) == 1:
             if own_moves in opp_moves:
                 score = -10.0
 
-        return score - len(opp_moves)
+        return float(score)
 
-    elif heuristic == "modified_warnsdorf":
-        own_moves = len(game.get_legal_moves(player))
-        opp_moves = len(game.get_legal_moves(game.get_opponent(player)))
-        return float(-1.0*own_moves - opp_moves)
+    #  MODIFIED WARNSDORF:  A variation of the Warnsdorf heuristic above that
+    # now also deducts the opponent's legal moves from the score.  This way,
+    # some of the adversarial nature of isolation is incorporated into original
+    # rule intended for non-adversarial "knight's tour."
+    elif HEURISTIC == "modified_warnsdorf":
+        own_moves = game.get_legal_moves(player)
+        opp_moves = game.get_legal_moves(game.get_opponent(player))
 
-    elif heuristic == "improved_distance":
+        score = -1.0 * float(len(own_moves))
+
+        if len(own_moves) == 1:
+            if own_moves in opp_moves:
+                score = -10.0
+
+        return float(score - len(opp_moves))
+
+    # IMPROVED KEEPCLOSE:  This is a variation of the "improved" heuristic that
+    # now also minimizes the distance from the opponent, in essence,  keeping
+    # the enemy close. The distance is calculated using an approximation of the
+    # Pythogream Theorem and is divided by 2.0 to lower its impact on the final
+    # score. (An optimal distance factor can likely be found with more study)
+    elif HEURISTIC == "improved_keepclose":
         own_moves = len(game.get_legal_moves(player))
         opp_moves = len(game.get_legal_moves(game.get_opponent(player)))
 
         c_own, r_own = game.get_player_location(player)
         c_opp, r_opp = game.get_player_location(game.get_opponent(player))
-        distance = ((c_opp - c_own)**2.0 + (r_opp - r_own)**2.0)**0.5
 
-        return float(distance/2.0 + own_moves -  opp_moves)
+        # get distance using hypothenuse approximation function 
+        length = abs(c_opp-c_own)
+        height = abs(r_opp-r_own)
+        distance = max(length, height) + 0.5*min(length, height)
+
+        return float(own_moves - opp_moves - distance/2.0)
 
 
 class CustomPlayer:
@@ -111,6 +143,7 @@ class CustomPlayer:
         self.method = method
         self.time_left = None
         self.TIMER_THRESHOLD = timeout
+        self.TIMER_MARGIN = 10
 
     def get_move(self, game, legal_moves, time_left):
         """Search for the best move from the available legal moves and return a
@@ -149,13 +182,12 @@ class CustomPlayer:
         """
 
         self.time_left = time_left
-        TIME_MARGIN = 20
 
         # return immediately if there are no legal moves
         if not legal_moves:
             return (-1,-1)
 
-        # select intial move; a corner position is chosen to minimize the number
+        # select initial move; a corner position is chosen to minimize the number
         # of options of legal moves from the start.  This follows Warnsdorf's
         # Rule, which seeks out moves with the fewest onward moves to save
         # higher-onward-moves spots for later in the game 
@@ -180,13 +212,14 @@ class CustomPlayer:
                 raise NotImplementedError
                 
             # use iterative deepening if iterative flag set
-            # start serach at depth 1 and continue until time is about expire
+            # start search at depth 1 and continue until time is about expire
             if self.iterative:
 
-                # set intial depth
+                # set initial depth
                 depth = 1
 
-                while self.time_left() > TIME_MARGIN:
+                # loop until time runs low
+                while self.time_left() > self.TIMER_MARGIN:
 
                     # get score and move for this depth
                     score, move = method(game, depth)
@@ -195,11 +228,17 @@ class CustomPlayer:
                     if score == float("inf") or score == float("-inf"):
                         break
                     
-                    depth = depth + 1
+                    depth += 1
 
             # use standard depth-first search to traverse tree
             else:
                 _, move = method(game, self.search_depth)
+
+        # minimax and alphabet throws this exception if it is in the middle of a
+        # search and time begins to run out.  The last good move is saved in 
+        # "move" from the while loop above, which is then returned  
+        except TimeExpiring:
+            return move
 
         except Timeout:
             pass
@@ -241,6 +280,10 @@ class CustomPlayer:
         if self.time_left() < self.TIMER_THRESHOLD:
             raise Timeout()
 
+        # if running low on time, raise flag to break loop
+        if self.time_left() < self.TIMER_MARGIN:
+            raise TimeExpiring()
+
         # at lowest depth (terminal condition), end recursion, and return score
         if depth == 0:
             return self.score(game, self), game.get_player_location(game.active_player)
@@ -265,7 +308,10 @@ class CustomPlayer:
 
                 # copy game board with new move, use recursion to go down level
                 new_game = game.forecast_move(move)
-                score, _ = self.minimax(new_game, depth-1, not maximizing_player)
+                score, m = self.minimax(new_game, depth-1, not maximizing_player)
+
+                if m == (-2,-2):
+                    return score, move
 
                 # save best score and move
                 if (maximizing_player and score > best_score) \
@@ -316,6 +362,10 @@ class CustomPlayer:
         """
         if self.time_left() < self.TIMER_THRESHOLD:
             raise Timeout()
+
+        # if running low on time, raise flag to break loop
+        if self.time_left() < self.TIMER_MARGIN:
+            raise TimeExpiring()
 
         # at lowest depth (terminal condition), end recursion, and return score
         if depth == 0:
